@@ -1,0 +1,8 @@
+[package]
+name = "tracer"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+utility = {path = "../utility"}
+rand = "0.10.0"

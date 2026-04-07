@@ -1,0 +1,122 @@
+use utility::color::Color;
+use utility::random::random_f64;
+use crate::camera::Camera;
+use crate::hittable::Hit;
+use crate::interval::Interval;
+use crate::ray::Ray;
+use crate::scene::Scene;
+use crate::vec3;
+use crate::vec3::Vec3;
+
+#[derive(Clone)]
+pub struct Tracer<'a>{
+    viewport_width: f32,
+    viewport_height: f32,
+
+    pixel_delta_u: Vec3,
+    pixel_delta_v: Vec3,
+    viewport_u: Vec3,
+    viewport_v: Vec3,
+
+    pixel_zero: Vec3,
+
+    camera: Camera,
+    scene: &'a Scene,
+
+    pixel_samples_scale: f64,
+    samples_per_pixel: u32,
+    max_bounces: u32,
+}
+
+impl<'a> Tracer<'a> {
+    pub fn new(image_width: u32, image_height: u32, samples_per_pixel: u32, max_bounces: u32, camera: Camera, scene: &'a Scene) -> Self {
+        let aspect_ratio = image_width as f32 / image_height as f32;
+        let viewport_height = 2.0;
+        let viewport_width = viewport_height * aspect_ratio;
+
+        let viewport_u = Vec3(viewport_width as f64, 0.0, 0.0);
+        let viewport_v = Vec3(0.0, (viewport_height as f64) * -1.0, 0.0);
+
+        let pixel_delta_u = viewport_u / image_width as f64;
+        let pixel_delta_v = viewport_v / image_height as f64;
+
+        let vp_upper_left = camera.position - Vec3(0.0, 0.0, camera.focal_length) - viewport_u * 0.5 - viewport_v * 0.5;
+        let pxl_0 = vp_upper_left + 0.5 * (pixel_delta_u + pixel_delta_v);
+
+        Tracer{
+            viewport_width,
+            viewport_height,
+            pixel_delta_u,
+            pixel_delta_v,
+            viewport_u,
+            viewport_v,
+            pixel_zero: pxl_0,
+            camera,
+            scene,
+            pixel_samples_scale: 1.0 / samples_per_pixel as f64,
+            samples_per_pixel,
+            max_bounces
+        }
+    }
+
+    pub fn raytrace_pixel(&self, x: u32, y: u32, interval: &Interval) -> Color {
+        let mut pixel_color = Vec3::zero();
+        for _ in 0..self.samples_per_pixel {
+            let ray = self.gen_ray(x, y);
+            pixel_color += self.trace_ray(ray, interval, self.max_bounces);
+        }
+
+        (pixel_color * self.pixel_samples_scale).as_color().gamma_correct()
+    }
+
+    fn sample_square() -> Vec3 {
+        Vec3(random_f64() - 0.5, random_f64() - 0.5, 0.0)
+    }
+
+    fn gen_ray(&self, x: u32, y: u32) -> Ray {
+        let offset = Self::sample_square();
+        let pixel_sample = self.pixel_zero
+            + ((x as f64 + offset.0) * self.pixel_delta_u)
+            + ((y as f64 + offset.1) * self.pixel_delta_v);
+
+        Ray{
+            origin: self.camera.position,
+            direction: pixel_sample - self.camera.position
+        }
+    }
+
+    fn trace_ray(&self, ray: Ray, interval: &Interval, depth: u32) -> Vec3 {
+        if depth == 0 {
+            return Vec3::zero();
+        }
+
+        let mut hr = Hit::default();
+        let mut closest_so_far = interval.max;
+        let mut hit_anything = false;
+
+        let mut direction = Vec3::zero();
+        for obj in self.scene {
+            if obj.hit(&ray, &Interval::new(interval.min, closest_so_far), &mut hr){
+                direction = hr.normal + Vec3::random_unit_vector();
+                hit_anything = true;
+                closest_so_far = hr.t;
+            }
+        }
+
+        if hit_anything {
+            return 0.5 * self.trace_ray(
+                Ray {
+                    origin: hr.point,
+                    direction,
+                },
+                interval,
+                depth - 1,
+            );
+        }
+        
+        let unit_vec = ray.direction.normalized();
+        let a = 0.5 * (unit_vec.1 + 1.0);
+
+        (1.0 - a) * Vec3(1.0, 1.0, 1.0) + a * Vec3(1.0, 0.7, 0.5)
+    }
+}
