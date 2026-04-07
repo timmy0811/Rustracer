@@ -20,11 +20,11 @@ impl Vec3 {
         Self(0.0, 0.0, 0.0)
     }
 
-    pub fn dot(self, rhs: Self) -> f64 {
+    pub fn dot(self, rhs: &Self) -> f64 {
         self.0 * rhs.0 + self.1 * rhs.1 + self.2 * rhs.2
     }
 
-    pub fn cross(self, rhs: Self) -> Self {
+    pub fn cross(self, rhs: &Self) -> Self {
         Self(
             self.1 * rhs.2 - self.2 * rhs.1,
             self.2 * rhs.0 - self.0 * rhs.2,
@@ -33,7 +33,7 @@ impl Vec3 {
     }
 
     pub fn length_squared(self) -> f64 {
-        self.dot(self)
+        self.dot(&self)
     }
 
     pub fn length(self) -> f64 {
@@ -43,6 +43,11 @@ impl Vec3 {
     pub fn normalized(self) -> Self {
         let len = self.length();
         if len == 0.0 { Self::zero() } else { self / len }
+    }
+
+    pub fn near_zero(&self) -> bool {
+        const S: f64 = 1e-8;
+        self.0.abs() < S && self.1.abs() < S && self.2.abs() < S
     }
 
     pub fn as_color(self) -> Color {
@@ -73,13 +78,17 @@ impl Vec3 {
         Vec3::zero()
     }
 
-    pub fn random_on_hemisphere(normal: Vec3) -> Self {
+    pub fn random_on_hemisphere(normal: &Vec3) -> Self {
         let on_unit_sphere = Self::random_unit_vector();
         if on_unit_sphere.dot(normal) > 0.0 {
             on_unit_sphere
         } else {
             -on_unit_sphere
         }
+    }
+
+    pub fn reflect(v: &Vec3, n: &Vec3) -> Vec3 {
+        *v - 2.0 * v.dot(&n) * *n
     }
 }
 
@@ -115,6 +124,17 @@ impl Mul<f64> for Vec3 {
     type Output = Vec3;
     fn mul(self, rhs: f64) -> Vec3 {
         Vec3(self.0 * rhs, self.1 * rhs, self.2 * rhs)
+    }
+}
+
+impl Mul<Color> for Vec3 {
+    type Output = Vec3;
+    fn mul(self, rhs: Color) -> Vec3 {
+        Vec3(
+            self.0 * (rhs.r as f64 / 255.0),
+            self.1 * (rhs.g as f64 / 255.0),
+            self.2 * (rhs.b as f64 / 255.0),
+        )
     }
 }
 

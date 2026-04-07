@@ -17,6 +17,7 @@ use winit::dpi::PhysicalSize;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::{Window, WindowId};
+use tracer::material::{Lambertian, Metal};
 
 pub struct App {
     window: Option<Arc<Window>>,
@@ -173,10 +174,20 @@ impl App {
             return;
         };
 
-        let sph1 = Sphere::new(Vec3(0.0, 0.0, -1.0), 0.5);
-        let sph2 = Sphere::new(Vec3(0.0, -100.5, -1.0), 100.0);
+        let mat_ground = Lambertian::new(Color::rgb(200, 100, 80));
+        let mat_center = Lambertian::new(Color::rgb(80, 30, 200));
+        let mat_left = Metal::new(Color::rgb(40, 240, 80));
+        let mat_right = Metal::new(Color::rgb(150, 10, 70));
+
+        let sph1 = Sphere::new(Vec3(0.0, 0.0, -1.0), 0.5, Arc::new(mat_center));
+        let sph2 = Sphere::new(Vec3(-1.0, 0.0, -1.0), 0.5, Arc::new(mat_left));
+        let sph3 = Sphere::new(Vec3(1.0, 0.0, -1.0), 0.5, Arc::new(mat_right));
+        let sph4 = Sphere::new(Vec3(0.0, -100.5, -1.0), 100.0, Arc::new(mat_ground));
+
         scene.add_object(sph1);
         scene.add_object(sph2);
+        scene.add_object(sph3);
+        scene.add_object(sph4);
     }
 }
 
@@ -210,6 +221,7 @@ impl ApplicationHandler for App {
         }
 
         self.setup_scene();
+        self.update_scene = true;
         window.request_redraw();
     }
 

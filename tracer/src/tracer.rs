@@ -94,24 +94,24 @@ impl<'a> Tracer<'a> {
         let mut closest_so_far = interval.max;
         let mut hit_anything = false;
 
-        let mut direction = Vec3::zero();
         for obj in self.scene {
             if obj.hit(&ray, &Interval::new(interval.min, closest_so_far), &mut hr){
-                direction = hr.normal + Vec3::random_unit_vector();
                 hit_anything = true;
                 closest_so_far = hr.t;
             }
         }
 
         if hit_anything {
-            return 0.5 * self.trace_ray(
-                Ray {
-                    origin: hr.point,
-                    direction,
-                },
-                interval,
-                depth - 1,
-            );
+            let mut scattered = Ray::new();
+            let mut attenuation = Color::black();
+
+            if let Some(material) = hr.material.as_ref() {
+                if material.scatter(&ray, &hr, &mut attenuation, &mut scattered) {
+                    return self.trace_ray(scattered, interval, depth - 1) * attenuation;
+                }
+            }
+
+            return Vec3::zero();
         }
         
         let unit_vec = ray.direction.normalized();

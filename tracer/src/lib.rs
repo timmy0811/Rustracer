@@ -8,5 +8,6 @@ pub mod camera;
 pub mod hittable;
 pub mod scene;
 mod interval;
+pub mod material;
 
 pub use worker::{raycast_scene_parallel, render_packages_in_parallel_atomic, RenderError, ThreadWorkPackage};

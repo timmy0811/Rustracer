@@ -1,40 +1,57 @@
 use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Color{
+pub struct Color {
     pub r: u8,
     pub g: u8,
     pub b: u8,
-    pub a: u8
+    pub a: u8,
 }
 
-impl Color{
-    pub fn x(&self) -> u8 {self.r}
-    pub fn y(&self) -> u8 {self.g}
-    pub fn z(&self) -> u8 {self.b}
-    pub fn w(&self) -> u8 {self.a}
+impl Color {
+    pub fn x(&self) -> u8 {
+        self.r
+    }
+    pub fn y(&self) -> u8 {
+        self.g
+    }
+    pub fn z(&self) -> u8 {
+        self.b
+    }
+    pub fn w(&self) -> u8 {
+        self.a
+    }
 
     pub fn rgba(r: u8, g: u8, b: u8, a: u8) -> Self {
-        Self{r, g, b, a}
+        Self { r, g, b, a }
     }
     pub fn rgba_f(r: f32, g: f32, b: f32, a: f32) -> Self {
-        Self{
-            r : (255.0 * r.clamp(0.0, 1.0)) as u8,
-            g : (255.0 * g.clamp(0.0, 1.0)) as u8,
-            b : (255.0 * b.clamp(0.0, 1.0)) as u8,
-            a : (255.0 * a.clamp(0.0, 1.0)) as u8
+        Self {
+            r: (255.0 * r.clamp(0.0, 1.0)) as u8,
+            g: (255.0 * g.clamp(0.0, 1.0)) as u8,
+            b: (255.0 * b.clamp(0.0, 1.0)) as u8,
+            a: (255.0 * a.clamp(0.0, 1.0)) as u8,
+        }
+    }
+
+    pub fn black() -> Self {
+        Self {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 255,
         }
     }
 
     pub fn rgb(r: u8, g: u8, b: u8) -> Self {
-        Self{r, g, b, a: 255}
+        Self { r, g, b, a: 255 }
     }
     pub fn rgb_f(r: f32, g: f32, b: f32) -> Self {
-        Self{
-            r : (255.0 * r.clamp(0.0, 1.0)) as u8,
-            g : (255.0 * g.clamp(0.0, 1.0)) as u8,
-            b : (255.0 * b.clamp(0.0, 1.0)) as u8,
-            a: 255
+        Self {
+            r: (255.0 * r.clamp(0.0, 1.0)) as u8,
+            g: (255.0 * g.clamp(0.0, 1.0)) as u8,
+            b: (255.0 * b.clamp(0.0, 1.0)) as u8,
+            a: 255,
         }
     }
 
@@ -45,12 +62,12 @@ impl Color{
     fn channel_from_f32(channel: f32) -> u8 {
         (255.0 * channel.clamp(0.0, 1.0)) as u8
     }
-    
-    fn linear_to_gamma(linear_component: f64) -> f64{
+
+    fn linear_to_gamma(linear_component: f64) -> f64 {
         if linear_component > 0.0 {
-            return linear_component.sqrt()
+            return linear_component.sqrt();
         }
-        
+
         0.0
     }
 
