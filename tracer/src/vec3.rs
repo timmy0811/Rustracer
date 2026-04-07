@@ -1,5 +1,6 @@
 use std::ops::*;
-use utility::color::Color;
+use utility::color::{Color, LinearColor};
+use utility::random;
 use utility::random::{random_f64, random_f64_limit};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -40,9 +41,9 @@ impl Vec3 {
         self.length_squared().sqrt()
     }
 
-    pub fn normalized(self) -> Self {
+    pub fn normalized(&self) -> Self {
         let len = self.length();
-        if len == 0.0 { Self::zero() } else { self / len }
+        if len == 0.0 { Self::zero() } else { *self / len }
     }
 
     pub fn near_zero(&self) -> bool {
@@ -50,8 +51,12 @@ impl Vec3 {
         self.0.abs() < S && self.1.abs() < S && self.2.abs() < S
     }
 
+    pub fn as_linear_color(self) -> LinearColor {
+        LinearColor::rgb(self.0 as f32, self.1 as f32, self.2 as f32)
+    }
+
     pub fn as_color(self) -> Color {
-        Color::rgb_f(self.0 as f32, self.1 as f32, self.2 as f32)
+        self.as_linear_color().to_color()
     }
 
     pub fn random() -> Self {
@@ -89,6 +94,25 @@ impl Vec3 {
 
     pub fn reflect(v: &Vec3, n: &Vec3) -> Vec3 {
         *v - 2.0 * v.dot(&n) * *n
+    }
+
+    pub fn refract(v: &Vec3, n: &Vec3, etai_over_etat: f64) -> Vec3 {
+        let cos_theta = (-*v).dot(&n).min(1.0);
+        let r_out_perp = etai_over_etat * (*v + cos_theta * *n);
+        let r_out_parallel = -((1.0 - r_out_perp.length_squared()).max(0.0).sqrt()) * *n;
+
+        r_out_perp + r_out_parallel
+    }
+
+    pub fn random_in_unit_disk() -> Self {
+        while true {
+            let p = Self(random::random_f64_limit(-1.0, 1.0), random::random_f64_limit(-1.0, 1.0), 0.0);
+            if p.length_squared() < 1.0 {
+                return p
+            }
+        }
+
+        Vec3::zero()
     }
 }
 
@@ -130,10 +154,17 @@ impl Mul<f64> for Vec3 {
 impl Mul<Color> for Vec3 {
     type Output = Vec3;
     fn mul(self, rhs: Color) -> Vec3 {
+        self * rhs.to_linear()
+    }
+}
+
+impl Mul<LinearColor> for Vec3 {
+    type Output = Vec3;
+    fn mul(self, rhs: LinearColor) -> Vec3 {
         Vec3(
-            self.0 * (rhs.r as f64 / 255.0),
-            self.1 * (rhs.g as f64 / 255.0),
-            self.2 * (rhs.b as f64 / 255.0),
+            self.0 * rhs.r as f64,
+            self.1 * rhs.g as f64,
+            self.2 * rhs.b as f64,
         )
     }
 }

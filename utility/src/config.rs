@@ -53,8 +53,8 @@ impl AppConfig {
         if self.height == 0 {
             return Err(ConfigError::Validation("`height` must be greater than 0".into()));
         }
-        if self.threads > 8 {
-            return Err(ConfigError::Validation("you cannot use more threads than 8".into()));
+        if self.threads > 32 {
+            return Err(ConfigError::Validation("you cannot use more threads than 32".into()));
         }
 
         Ok(())

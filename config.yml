@@ -1,6 +1,6 @@
-width: 800
-height: 800
-threads: 8
+width: 400
+height: 400
+threads: 16
 frame_time: 50
-samples_per_pixel: 20
-max_bounces: 4
+samples_per_pixel: 50
+max_bounces: 30

@@ -1,4 +1,6 @@
 use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub};
+use rand::RngExt;
+use crate::random;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Color {
@@ -6,6 +8,139 @@ pub struct Color {
     pub g: u8,
     pub b: u8,
     pub a: u8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct LinearColor {
+    pub r: f32,
+    pub g: f32,
+    pub b: f32,
+    pub a: f32,
+}
+
+impl LinearColor {
+    pub fn x(&self) -> f32 {
+        self.r
+    }
+    pub fn y(&self) -> f32 {
+        self.g
+    }
+    pub fn z(&self) -> f32 {
+        self.b
+    }
+    pub fn w(&self) -> f32 {
+        self.a
+    }
+
+    pub fn random() -> Self {
+        let mut rng = rand::rng();
+        Self{
+            r: rng.random(),
+            g: rng.random(),
+            b: rng.random(),
+            a: 1.0,
+        }
+    }
+
+    pub fn random_limit(min: f32, max: f32) -> Self {
+        Self{
+            r: random::random_f32_limit(min, max),
+            g: random::random_f32_limit(min, max),
+            b: random::random_f32_limit(min, max),
+            a: 1.0,
+        }
+    }
+
+    pub fn rgba(r: f32, g: f32, b: f32, a: f32) -> Self {
+        Self {
+            r: r.clamp(0.0, 1.0),
+            g: g.clamp(0.0, 1.0),
+            b: b.clamp(0.0, 1.0),
+            a: a.clamp(0.0, 1.0),
+        }
+    }
+
+    pub fn rgb(r: f32, g: f32, b: f32) -> Self {
+        Self::rgba(r, g, b, 1.0)
+    }
+
+    pub fn black() -> Self {
+        Self::rgb(0.0, 0.0, 0.0)
+    }
+
+    pub fn white() -> Self {
+        Self::rgb(1.0, 1.0, 1.0)
+    }
+
+    fn linear_to_gamma(linear_component: f32) -> f32 {
+        if linear_component > 0.0 {
+            return linear_component.sqrt();
+        }
+
+        0.0
+    }
+
+    pub fn gamma_correct(mut self) -> Self {
+        self.r = Self::linear_to_gamma(self.r);
+        self.g = Self::linear_to_gamma(self.g);
+        self.b = Self::linear_to_gamma(self.b);
+        self
+    }
+
+    pub fn to_color(self) -> Color {
+        Color::rgba_f(self.r, self.g, self.b, self.a)
+    }
+}
+
+impl Add for LinearColor {
+    type Output = LinearColor;
+
+    fn add(self, rhs: LinearColor) -> LinearColor {
+        LinearColor::rgba(
+            self.r + rhs.r,
+            self.g + rhs.g,
+            self.b + rhs.b,
+            self.a + rhs.a,
+        )
+    }
+}
+
+impl Sub for LinearColor {
+    type Output = LinearColor;
+
+    fn sub(self, rhs: LinearColor) -> LinearColor {
+        LinearColor::rgba(
+            self.r - rhs.r,
+            self.g - rhs.g,
+            self.b - rhs.b,
+            self.a - rhs.a,
+        )
+    }
+}
+
+impl Mul<f32> for LinearColor {
+    type Output = LinearColor;
+
+    fn mul(self, rhs: f32) -> LinearColor {
+        LinearColor::rgba(self.r * rhs, self.g * rhs, self.b * rhs, self.a * rhs)
+    }
+}
+
+impl Div<f32> for LinearColor {
+    type Output = LinearColor;
+
+    fn div(self, rhs: f32) -> LinearColor {
+        LinearColor::rgba(self.r / rhs, self.g / rhs, self.b / rhs, self.a / rhs)
+    }
+}
+
+impl AddAssign for LinearColor {
+    fn add_assign(&mut self, rhs: LinearColor) {
+        self.r = (self.r + rhs.r).clamp(0.0, 1.0);
+        self.g = (self.g + rhs.g).clamp(0.0, 1.0);
+        self.b = (self.b + rhs.b).clamp(0.0, 1.0);
+        self.a = (self.a + rhs.a).clamp(0.0, 1.0);
+    }
 }
 
 impl Color {
@@ -59,28 +194,29 @@ impl Color {
         channel as f32 / 255.0
     }
 
-    fn channel_from_f32(channel: f32) -> u8 {
-        (255.0 * channel.clamp(0.0, 1.0)) as u8
+    pub fn to_linear(self) -> LinearColor {
+        LinearColor::rgba(
+            Self::channel_to_f32(self.r),
+            Self::channel_to_f32(self.g),
+            Self::channel_to_f32(self.b),
+            Self::channel_to_f32(self.a),
+        )
     }
 
-    fn linear_to_gamma(linear_component: f64) -> f64 {
-        if linear_component > 0.0 {
-            return linear_component.sqrt();
-        }
-
-        0.0
+    pub fn gamma_correct(self) -> Self {
+        self.to_linear().gamma_correct().to_color()
     }
+}
 
-    pub fn gamma_correct(mut self) -> Self {
-        let r = Self::channel_to_f32(self.r);
-        let g = Self::channel_to_f32(self.g);
-        let b = Self::channel_to_f32(self.b);
+impl From<Color> for LinearColor {
+    fn from(value: Color) -> Self {
+        value.to_linear()
+    }
+}
 
-        self.r = Self::channel_from_f32(Self::linear_to_gamma(r as f64) as f32);
-        self.g = Self::channel_from_f32(Self::linear_to_gamma(g as f64) as f32);
-        self.b = Self::channel_from_f32(Self::linear_to_gamma(b as f64) as f32);
-
-        self
+impl From<LinearColor> for Color {
+    fn from(value: LinearColor) -> Self {
+        value.to_color()
     }
 }
 
@@ -136,12 +272,7 @@ impl Mul<f32> for Color {
     type Output = Color;
 
     fn mul(self, rhs: f32) -> Color {
-        Color::rgba_f(
-            Self::channel_to_f32(self.r) * rhs,
-            Self::channel_to_f32(self.g) * rhs,
-            Self::channel_to_f32(self.b) * rhs,
-            Self::channel_to_f32(self.a) * rhs,
-        )
+        (self.to_linear() * rhs).to_color()
     }
 }
 
@@ -149,12 +280,7 @@ impl Div<f32> for Color {
     type Output = Color;
 
     fn div(self, rhs: f32) -> Color {
-        Color::rgba_f(
-            Self::channel_to_f32(self.r) / rhs,
-            Self::channel_to_f32(self.g) / rhs,
-            Self::channel_to_f32(self.b) / rhs,
-            Self::channel_to_f32(self.a) / rhs,
-        )
+        (self.to_linear() / rhs).to_color()
     }
 }
 
@@ -171,11 +297,6 @@ impl Mul<Color> for f32 {
     type Output = Color;
 
     fn mul(self, rhs: Color) -> Color {
-        Color::rgba(
-            Color::channel_from_f32(self * Color::channel_to_f32(rhs.r)),
-            Color::channel_from_f32(self * Color::channel_to_f32(rhs.g)),
-            Color::channel_from_f32(self * Color::channel_to_f32(rhs.b)),
-            Color::channel_from_f32(self * Color::channel_to_f32(rhs.a)),
-        )
+        (rhs.to_linear() * self).to_color()
     }
 }

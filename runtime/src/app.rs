@@ -1,23 +1,25 @@
 use crate::framebuffer::Framebuffer;
 use crate::gpu::GpuState;
+use log::set_max_level;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tracer::camera::Camera;
 use tracer::hittable::sphere::Sphere;
+use tracer::material::{Dielectric, Lambertian, Material, Metal};
 use tracer::scene::Scene;
 use tracer::tracer::Tracer;
 use tracer::vec3::Vec3;
 use tracer::{RenderError, raycast_scene_parallel};
-use utility::color::Color;
+use utility::color::{Color, LinearColor};
 use utility::config::{AppConfig, ConfigError, DEFAULT_CONFIG_PATH};
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::{Window, WindowId};
-use tracer::material::{Lambertian, Metal};
+use utility::random::random_f64;
 
 pub struct App {
     window: Option<Arc<Window>>,
@@ -33,11 +35,14 @@ pub struct App {
 
     camera: Camera,
     scene: Arc<Scene>,
+
+    start_duration: Duration,
 }
 
 impl App {
     pub fn new() -> Result<Self, ConfigError> {
         env_logger::init();
+
         log::info!("Welcome to Rustracer!");
         log::info!("Initializing App...");
 
@@ -55,6 +60,18 @@ impl App {
 
         let frametime = config.frame_time;
 
+        let mut camera = Camera::default();
+
+        camera.lookfrom = Vec3(13.0, 2.0, 3.0);
+        camera.lookat = Vec3(0.0, 0.0, 0.0);
+        camera.up = Vec3(0.0, 1.0, 0.0);
+        camera.fov = 20.0;
+
+        camera.defocus_angle = 0.6;
+        camera.focus_dist = 10.0;
+
+        camera.init();
+
         Ok(Self {
             window: None,
             g_context: None,
@@ -66,8 +83,9 @@ impl App {
             worker_job: None,
             upload_interval: Duration::from_millis(frametime),
             last_upload: Instant::now() - Duration::from_millis(frametime),
-            camera: Camera::default(),
+            camera,
             scene: Arc::new(Scene::new(32)),
+            start_duration: Duration::ZERO,
         })
     }
 
@@ -115,7 +133,7 @@ impl App {
             byte.store(0, Ordering::Relaxed);
         }
 
-        self.update_scene = false;
+        self.start_duration = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
 
         self.worker_job = Some(std::thread::spawn(move || {
             let scene_ref = scene.as_ref();
@@ -127,6 +145,7 @@ impl App {
                 camera,
                 scene_ref,
             );
+
             raycast_scene_parallel(scene_ref, shared.as_slice(), width, height, threads, tracer)
         }));
     }
@@ -143,8 +162,10 @@ impl App {
         let worker_job = self.worker_job.take().expect("worker job must exist");
         match worker_job.join() {
             Ok(Ok(())) => {
-                // Keep rendering batches running; later this can be driven by scene/input events.
                 self.update_scene = false;
+                let frame_time =
+                    SystemTime::now().duration_since(UNIX_EPOCH).unwrap() - self.start_duration;
+                log::error!("frame rendered in {frame_time:?}");
             }
             Ok(Err(err)) => {
                 log::error!("render error: {err:?}");
@@ -174,20 +195,44 @@ impl App {
             return;
         };
 
-        let mat_ground = Lambertian::new(Color::rgb(200, 100, 80));
-        let mat_center = Lambertian::new(Color::rgb(80, 30, 200));
-        let mat_left = Metal::new(Color::rgb(40, 240, 80));
-        let mat_right = Metal::new(Color::rgb(150, 10, 70));
+        let mat_ground = Lambertian::new(Color::rgb_f(0.5, 0.5, 0.5));
+        scene.add_object(Sphere::new(Vec3(0.0, -1000.0, -1.0), 1000.00, Arc::new(mat_ground)));
 
-        let sph1 = Sphere::new(Vec3(0.0, 0.0, -1.0), 0.5, Arc::new(mat_center));
-        let sph2 = Sphere::new(Vec3(-1.0, 0.0, -1.0), 0.5, Arc::new(mat_left));
-        let sph3 = Sphere::new(Vec3(1.0, 0.0, -1.0), 0.5, Arc::new(mat_right));
-        let sph4 = Sphere::new(Vec3(0.0, -100.5, -1.0), 100.0, Arc::new(mat_ground));
+        for i in -11..11 {
+            for j in -11..11 {
+                let random_mat = random_f64();
+                let center = Vec3(i as f64 + 0.9 * random_f64(), 0.2, j as f64 + 0.9 * random_f64());
 
-        scene.add_object(sph1);
-        scene.add_object(sph2);
-        scene.add_object(sph3);
-        scene.add_object(sph4);
+                if (center - Vec3(4.0, 0.2, 0.0)).length() > 0.9 {
+                    let mat: Arc<dyn Material>;
+
+                    if random_mat < 0.8 {
+                        let albedo = LinearColor::random().to_color();
+                        mat = Arc::new(Lambertian::new(albedo));
+                        scene.add_object(Sphere::new(center, 0.2, mat));
+                    }
+                    else if random_mat < 0.95 {
+                        let albedo = LinearColor::random_limit(0.5, 1.0).to_color();
+                        let fuzz = random_f64() * 0.5;
+                        mat = Arc::new(Metal::new(albedo, fuzz));
+                        scene.add_object(Sphere::new(center, 0.2, mat));
+                    }
+                    else {
+                        mat = Arc::new(Dielectric::new(1.5));
+                        scene.add_object(Sphere::new(center, 0.2, mat));
+                    }
+                }
+            }
+        }
+
+        let mat = Dielectric::new(1.5);
+        scene.add_object(Sphere::new(Vec3(0.0, 1.0, 0.0), 1.0, Arc::new(mat)));
+
+        let mat = Lambertian::new(Color::rgb_f(0.1, 0.2, 0.5));
+        scene.add_object(Sphere::new(Vec3(-4.0, 1.0, 0.0), 1.0, Arc::new(mat)));
+
+        let mat = Metal::new(Color::rgb_f(0.7, 0.6, 0.5), 0.0);
+        scene.add_object(Sphere::new(Vec3(4.0, 1.0, 0.0), 1.0, Arc::new(mat)));
     }
 }
 
@@ -221,7 +266,6 @@ impl ApplicationHandler for App {
         }
 
         self.setup_scene();
-        self.update_scene = true;
         window.request_redraw();
     }
 

@@ -1,17 +1,16 @@
-use utility::color::Color;
-use utility::random::random_f64;
+use utility::color::{Color, LinearColor};
+use utility::random::{degrees_to_radians, random_f64};
 use crate::camera::Camera;
 use crate::hittable::Hit;
 use crate::interval::Interval;
 use crate::ray::Ray;
 use crate::scene::Scene;
-use crate::vec3;
 use crate::vec3::Vec3;
 
 #[derive(Clone)]
 pub struct Tracer<'a>{
-    viewport_width: f32,
-    viewport_height: f32,
+    viewport_width: f64,
+    viewport_height: f64,
 
     pixel_delta_u: Vec3,
     pixel_delta_v: Vec3,
@@ -30,17 +29,20 @@ pub struct Tracer<'a>{
 
 impl<'a> Tracer<'a> {
     pub fn new(image_width: u32, image_height: u32, samples_per_pixel: u32, max_bounces: u32, camera: Camera, scene: &'a Scene) -> Self {
-        let aspect_ratio = image_width as f32 / image_height as f32;
-        let viewport_height = 2.0;
+        let aspect_ratio = image_width as f64 / image_height as f64;
+
+        let theta = degrees_to_radians(camera.fov);
+        let h = f64::tan(theta/2.0);
+        let viewport_height = 2.0 * h * camera.focus_dist;
         let viewport_width = viewport_height * aspect_ratio;
 
-        let viewport_u = Vec3(viewport_width as f64, 0.0, 0.0);
-        let viewport_v = Vec3(0.0, (viewport_height as f64) * -1.0, 0.0);
+        let viewport_u = viewport_width * camera.u;
+        let viewport_v = viewport_height *-camera.v;
 
         let pixel_delta_u = viewport_u / image_width as f64;
         let pixel_delta_v = viewport_v / image_height as f64;
 
-        let vp_upper_left = camera.position - Vec3(0.0, 0.0, camera.focal_length) - viewport_u * 0.5 - viewport_v * 0.5;
+        let vp_upper_left = camera.position - camera.focus_dist * camera.w - viewport_u * 0.5 - viewport_v * 0.5;
         let pxl_0 = vp_upper_left + 0.5 * (pixel_delta_u + pixel_delta_v);
 
         Tracer{
@@ -66,11 +68,19 @@ impl<'a> Tracer<'a> {
             pixel_color += self.trace_ray(ray, interval, self.max_bounces);
         }
 
-        (pixel_color * self.pixel_samples_scale).as_color().gamma_correct()
+        (pixel_color * self.pixel_samples_scale)
+            .as_linear_color()
+            .gamma_correct()
+            .to_color()
     }
 
     fn sample_square() -> Vec3 {
         Vec3(random_f64() - 0.5, random_f64() - 0.5, 0.0)
+    }
+
+    fn defocus_disk_sample(&self) -> Vec3 {
+        let p = Vec3::random_in_unit_disk();
+        self.camera.position + p.0 * self.camera.defocus_disk_u + p.1 * self.camera.defocus_disk_v
     }
 
     fn gen_ray(&self, x: u32, y: u32) -> Ray {
@@ -79,9 +89,15 @@ impl<'a> Tracer<'a> {
             + ((x as f64 + offset.0) * self.pixel_delta_u)
             + ((y as f64 + offset.1) * self.pixel_delta_v);
 
-        Ray{
-            origin: self.camera.position,
-            direction: pixel_sample - self.camera.position
+        let origin = if self.camera.defocus_angle <= 0.0 {
+            self.camera.position
+        } else {
+            self.defocus_disk_sample()
+        };
+
+        Ray {
+            origin,
+            direction: pixel_sample - origin,
         }
     }
 
@@ -103,7 +119,7 @@ impl<'a> Tracer<'a> {
 
         if hit_anything {
             let mut scattered = Ray::new();
-            let mut attenuation = Color::black();
+            let mut attenuation = LinearColor::black();
 
             if let Some(material) = hr.material.as_ref() {
                 if material.scatter(&ray, &hr, &mut attenuation, &mut scattered) {
