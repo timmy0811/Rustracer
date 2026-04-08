@@ -6,6 +6,8 @@ A simple Sphere-Raytracer written in Rust rendering a random generated Scene.
 
 The app uses `winit` + `wgpu` for windowing/display and a CPU path tracer backend for ray casting.
 
+![](https://github.com/timmy0811/Rustracer/blob/Projects/img.png)
+
 ## Workspace layout
 
 - `runtime/` - windowing, GPU upload/present path, input handling, scene bootstrap.
