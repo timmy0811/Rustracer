@@ -60,8 +60,16 @@ impl LinearColor {
         }
     }
 
+    pub fn rgba_unclamped(r: f32, g: f32, b: f32, a: f32) -> Self {
+        Self { r, g, b, a }
+    }
+
     pub fn rgb(r: f32, g: f32, b: f32) -> Self {
         Self::rgba(r, g, b, 1.0)
+    }
+
+    pub fn rgb_unclamped(r: f32, g: f32, b: f32) -> Self {
+        Self::rgba_unclamped(r, g, b, 1.0)
     }
 
     pub fn black() -> Self {
@@ -96,7 +104,7 @@ impl Add for LinearColor {
     type Output = LinearColor;
 
     fn add(self, rhs: LinearColor) -> LinearColor {
-        LinearColor::rgba(
+        LinearColor::rgba_unclamped(
             self.r + rhs.r,
             self.g + rhs.g,
             self.b + rhs.b,
@@ -109,7 +117,7 @@ impl Sub for LinearColor {
     type Output = LinearColor;
 
     fn sub(self, rhs: LinearColor) -> LinearColor {
-        LinearColor::rgba(
+        LinearColor::rgba_unclamped(
             self.r - rhs.r,
             self.g - rhs.g,
             self.b - rhs.b,
@@ -122,7 +130,7 @@ impl Mul<f32> for LinearColor {
     type Output = LinearColor;
 
     fn mul(self, rhs: f32) -> LinearColor {
-        LinearColor::rgba(self.r * rhs, self.g * rhs, self.b * rhs, self.a * rhs)
+        LinearColor::rgba_unclamped(self.r * rhs, self.g * rhs, self.b * rhs, self.a * rhs)
     }
 }
 
@@ -130,20 +138,24 @@ impl Div<f32> for LinearColor {
     type Output = LinearColor;
 
     fn div(self, rhs: f32) -> LinearColor {
-        LinearColor::rgba(self.r / rhs, self.g / rhs, self.b / rhs, self.a / rhs)
+        LinearColor::rgba_unclamped(self.r / rhs, self.g / rhs, self.b / rhs, self.a / rhs)
     }
 }
 
 impl AddAssign for LinearColor {
     fn add_assign(&mut self, rhs: LinearColor) {
-        self.r = (self.r + rhs.r).clamp(0.0, 1.0);
-        self.g = (self.g + rhs.g).clamp(0.0, 1.0);
-        self.b = (self.b + rhs.b).clamp(0.0, 1.0);
-        self.a = (self.a + rhs.a).clamp(0.0, 1.0);
+        self.r += rhs.r;
+        self.g += rhs.g;
+        self.b += rhs.b;
+        self.a += rhs.a;
     }
 }
 
 impl Color {
+    fn quantize_channel(channel: f32) -> u8 {
+        (255.0 * channel.clamp(0.0, 1.0)).round() as u8
+    }
+
     pub fn x(&self) -> u8 {
         self.r
     }
@@ -162,10 +174,10 @@ impl Color {
     }
     pub fn rgba_f(r: f32, g: f32, b: f32, a: f32) -> Self {
         Self {
-            r: (255.0 * r.clamp(0.0, 1.0)) as u8,
-            g: (255.0 * g.clamp(0.0, 1.0)) as u8,
-            b: (255.0 * b.clamp(0.0, 1.0)) as u8,
-            a: (255.0 * a.clamp(0.0, 1.0)) as u8,
+            r: Self::quantize_channel(r),
+            g: Self::quantize_channel(g),
+            b: Self::quantize_channel(b),
+            a: Self::quantize_channel(a),
         }
     }
 
@@ -183,9 +195,9 @@ impl Color {
     }
     pub fn rgb_f(r: f32, g: f32, b: f32) -> Self {
         Self {
-            r: (255.0 * r.clamp(0.0, 1.0)) as u8,
-            g: (255.0 * g.clamp(0.0, 1.0)) as u8,
-            b: (255.0 * b.clamp(0.0, 1.0)) as u8,
+            r: Self::quantize_channel(r),
+            g: Self::quantize_channel(g),
+            b: Self::quantize_channel(b),
             a: 255,
         }
     }
@@ -300,3 +312,26 @@ impl Mul<Color> for f32 {
         (rhs.to_linear() * self).to_color()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{Color, LinearColor};
+
+    #[test]
+    fn linear_color_add_assign_does_not_clamp_accumulation() {
+        let mut c = LinearColor::rgb_unclamped(0.8, 0.1, 0.0);
+        c += LinearColor::rgb_unclamped(0.7, 0.2, 0.0);
+
+        assert!(c.r > 1.0);
+        assert!((c.r - 1.5).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn float_quantization_rounds_to_nearest() {
+        let c = Color::rgb_f(0.5, 0.5, 0.5);
+        assert_eq!(c.r, 128);
+        assert_eq!(c.g, 128);
+        assert_eq!(c.b, 128);
+    }
+}
+

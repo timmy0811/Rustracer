@@ -56,7 +56,7 @@ impl Vec3 {
     }
 
     pub fn as_linear_color(self) -> LinearColor {
-        LinearColor::rgb(self.0 as f32, self.1 as f32, self.2 as f32)
+        LinearColor::rgb_unclamped(self.0 as f32, self.1 as f32, self.2 as f32)
     }
 
     pub fn as_color(self) -> Color {
