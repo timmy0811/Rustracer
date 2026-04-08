@@ -1,11 +1,17 @@
-use utility::color::LinearColor;
-use utility::random::random_f64;
 use crate::hittable::Hit;
 use crate::ray::Ray;
 use crate::vec3::Vec3;
+use utility::color::LinearColor;
+use utility::random::random_f64;
 
 pub trait Material: Send + Sync {
-    fn scatter(&self, r_in: &Ray, hit: &Hit, attenuation: &mut LinearColor, scattered: &mut Ray) -> bool {
+    fn scatter(
+        &self,
+        r_in: &Ray,
+        hit: &Hit,
+        attenuation: &mut LinearColor,
+        scattered: &mut Ray,
+    ) -> bool {
         false
     }
 }
@@ -23,7 +29,13 @@ impl Lambertian {
 }
 
 impl Material for Lambertian {
-    fn scatter(&self, r_in: &Ray, hit: &Hit, attenuation: &mut LinearColor, scattered: &mut Ray) -> bool {
+    fn scatter(
+        &self,
+        r_in: &Ray,
+        hit: &Hit,
+        attenuation: &mut LinearColor,
+        scattered: &mut Ray,
+    ) -> bool {
         let mut scatter_direction = hit.normal + Vec3::random_unit_vector();
 
         if scatter_direction.near_zero() {
@@ -41,7 +53,7 @@ impl Material for Lambertian {
 
 pub struct Metal {
     pub albedo: LinearColor,
-    pub fuzz: f64
+    pub fuzz: f64,
 }
 
 impl Metal {
@@ -54,7 +66,13 @@ impl Metal {
 }
 
 impl Material for Metal {
-    fn scatter(&self, r_in: &Ray, hit: &Hit, attenuation: &mut LinearColor, scattered: &mut Ray) -> bool {
+    fn scatter(
+        &self,
+        r_in: &Ray,
+        hit: &Hit,
+        attenuation: &mut LinearColor,
+        scattered: &mut Ray,
+    ) -> bool {
         let mut reflected = Vec3::reflect(&r_in.direction, &hit.normal);
         reflected = reflected.normalized() + (self.fuzz * Vec3::random_unit_vector());
 
@@ -68,12 +86,14 @@ impl Material for Metal {
 }
 
 pub struct Dielectric {
-    pub index_of_refraction: f64
+    pub index_of_refraction: f64,
 }
 
 impl Dielectric {
     pub fn new(index_of_refraction: f64) -> Self {
-        Self { index_of_refraction }
+        Self {
+            index_of_refraction,
+        }
     }
 
     fn reflectance(cosine: f64, ref_idx: f64) -> f64 {
@@ -84,11 +104,21 @@ impl Dielectric {
 }
 
 impl Material for Dielectric {
-    fn scatter(&self, r_in: &Ray, hit: &Hit, attenuation: &mut LinearColor, scattered: &mut Ray) -> bool {
+    fn scatter(
+        &self,
+        r_in: &Ray,
+        hit: &Hit,
+        attenuation: &mut LinearColor,
+        scattered: &mut Ray,
+    ) -> bool {
         *attenuation = LinearColor::white();
 
         let unit_direction = r_in.direction.normalized();
-        let ri = if hit.front_face {1.0 / self.index_of_refraction} else {self.index_of_refraction};
+        let ri = if hit.front_face {
+            1.0 / self.index_of_refraction
+        } else {
+            self.index_of_refraction
+        };
 
         let cos_theta = (-unit_direction).dot(&hit.normal).min(1.0);
         let sin_theta = (1.0 - cos_theta * cos_theta).sqrt();

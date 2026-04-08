@@ -43,7 +43,11 @@ impl Vec3 {
 
     pub fn normalized(&self) -> Self {
         let len = self.length();
-        if len == 0.0 { Self::zero() } else { *self / len }
+        if len == 0.0 {
+            Self::zero()
+        } else {
+            *self / len
+        }
     }
 
     pub fn near_zero(&self) -> bool {
@@ -106,9 +110,13 @@ impl Vec3 {
 
     pub fn random_in_unit_disk() -> Self {
         while true {
-            let p = Self(random::random_f64_limit(-1.0, 1.0), random::random_f64_limit(-1.0, 1.0), 0.0);
+            let p = Self(
+                random::random_f64_limit(-1.0, 1.0),
+                random::random_f64_limit(-1.0, 1.0),
+                0.0,
+            );
             if p.length_squared() < 1.0 {
-                return p
+                return p;
             }
         }
 

@@ -1,9 +1,7 @@
-use rand::{random, RngExt};
-
-const PI : f64 = 3.14159265359;
+use rand::RngExt;
 
 pub fn degrees_to_radians(degrees: f64) -> f64 {
-    degrees * PI / 180.0
+    degrees * std::f64::consts::PI / 180.0
 }
 
 pub fn random_f64() -> f64 {

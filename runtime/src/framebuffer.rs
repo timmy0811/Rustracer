@@ -4,14 +4,16 @@ pub struct Framebuffer {
     pub data: Vec<u8>,
     pub width: u32,
     pub height: u32,
-    pub bytes_per_pixel: u32
+    pub bytes_per_pixel: u32,
 }
 
-impl Framebuffer{
+impl Framebuffer {
     pub fn new(width: u32, height: u32, bytes_per_pixel: u32) -> Self {
-        Self{
-            data: vec!{0; (width * height * bytes_per_pixel) as usize},
-            width, height, bytes_per_pixel
+        Self {
+            data: vec![0; (width * height * bytes_per_pixel) as usize],
+            width,
+            height,
+            bytes_per_pixel,
         }
     }
 
@@ -33,14 +35,12 @@ impl Framebuffer{
             for pixel in self.data.chunks_exact_mut(self.bytes_per_pixel as usize) {
                 pixel.copy_from_slice(&rgb);
             }
-        }
-        else if self.bytes_per_pixel == 4 {
+        } else if self.bytes_per_pixel == 4 {
             let rgba = [color.r, color.g, color.b, color.a];
             for pixel in self.data.chunks_exact_mut(self.bytes_per_pixel as usize) {
                 pixel.copy_from_slice(&rgba);
             }
-        }
-        else{
+        } else {
             panic!("filling a framebuffer is only valid with rgb or rbga colors");
         }
     }

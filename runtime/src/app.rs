@@ -1,6 +1,8 @@
 use crate::framebuffer::Framebuffer;
 use crate::gpu::GpuState;
-use log::set_max_level;
+use crate::input::{InputAction, InputState};
+use env_logger::Env;
+use std::f64::consts::FRAC_PI_2;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::thread::JoinHandle;
@@ -14,18 +16,28 @@ use tracer::vec3::Vec3;
 use tracer::{RenderError, raycast_scene_parallel};
 use utility::color::{Color, LinearColor};
 use utility::config::{AppConfig, ConfigError, DEFAULT_CONFIG_PATH};
+use utility::random::random_f64;
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
-use winit::event::WindowEvent;
+use winit::event::{ElementState, KeyEvent, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+use winit::keyboard::PhysicalKey;
 use winit::window::{Window, WindowId};
-use utility::random::random_f64;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RenderMode {
+    Preview,
+    Final,
+}
+
+const CAMERA_DEFOCUS_STEP: f64 = 0.05;
+const CAMERA_FOCUS_DIST_STEP: f64 = 0.5;
+const MIN_FOCUS_DIST: f64 = 0.01;
 
 pub struct App {
     window: Option<Arc<Window>>,
     g_context: Option<GraphicsContext>,
     g_data: GraphicsData,
-    timestep: f32,
     config: AppConfig,
     update_scene: bool,
     shared_render_buffer: Arc<Vec<AtomicU8>>,
@@ -35,20 +47,31 @@ pub struct App {
 
     camera: Camera,
     scene: Arc<Scene>,
+    render_mode: RenderMode,
+    min_viewport_size: PhysicalSize<u32>,
+    preview_render_size: PhysicalSize<u32>,
+    final_render_size: PhysicalSize<u32>,
 
     start_duration: Duration,
+    is_final_render: bool,
 }
 
 impl App {
     pub fn new() -> Result<Self, ConfigError> {
-        env_logger::init();
+        env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
 
         log::info!("Welcome to Rustracer!");
         log::info!("Initializing App...");
 
         let config = AppConfig::load_from_file(DEFAULT_CONFIG_PATH)?;
 
-        let mut framebuffer = Framebuffer::new(config.width, config.height, 4);
+        let min_viewport_size =
+            PhysicalSize::new(config.min_viewport_width, config.min_viewport_height());
+        let preview_render_size = PhysicalSize::new(config.preview_width, config.preview_height());
+        let final_render_size = PhysicalSize::new(config.width, config.final_height());
+
+        let mut framebuffer =
+            Framebuffer::new(preview_render_size.width, preview_render_size.height, 4);
         framebuffer.fill(Color::rgb(20, 30, 200));
         let shared_render_buffer = Arc::new(
             (0..framebuffer.data.len())
@@ -76,16 +99,20 @@ impl App {
             window: None,
             g_context: None,
             g_data: data,
-            timestep: 1.0 / 16.0,
             config,
-            update_scene: false,
+            update_scene: true,
             shared_render_buffer,
             worker_job: None,
             upload_interval: Duration::from_millis(frametime),
             last_upload: Instant::now() - Duration::from_millis(frametime),
             camera,
             scene: Arc::new(Scene::new(32)),
+            render_mode: RenderMode::Preview,
+            min_viewport_size,
+            preview_render_size,
+            final_render_size,
             start_duration: Duration::ZERO,
+            is_final_render: false,
         })
     }
 
@@ -124,8 +151,13 @@ impl App {
         let shared = Arc::clone(&self.shared_render_buffer);
         let scene = Arc::clone(&self.scene);
         let camera = self.camera.clone();
-        let samples_per_pixel = self.config.samples_per_pixel;
-        let max_bounces = self.config.max_bounces;
+        let (samples_per_pixel, max_bounces) = match self.render_mode {
+            RenderMode::Preview => (
+                self.config.preview_samples_per_pixel,
+                self.config.preview_max_bounces,
+            ),
+            RenderMode::Final => (self.config.samples_per_pixel, self.config.max_bounces),
+        };
 
         // Show unfinished work as black until the worker batch finishes.
         self.g_data.framebuffer.data.fill(0);
@@ -163,9 +195,13 @@ impl App {
         match worker_job.join() {
             Ok(Ok(())) => {
                 self.update_scene = false;
-                let frame_time =
-                    SystemTime::now().duration_since(UNIX_EPOCH).unwrap() - self.start_duration;
-                log::error!("frame rendered in {frame_time:?}");
+                if self.is_final_render {
+                    let frame_time =
+                        SystemTime::now().duration_since(UNIX_EPOCH).unwrap() - self.start_duration;
+                    log::info!("frame rendered in {frame_time:?}");
+                }
+
+                self.is_final_render = false;
             }
             Ok(Err(err)) => {
                 log::error!("render error: {err:?}");
@@ -190,18 +226,185 @@ impl App {
         }
     }
 
+    fn resize_render_target(&mut self, new_size: PhysicalSize<u32>) {
+        if self.g_data.framebuffer.width == new_size.width
+            && self.g_data.framebuffer.height == new_size.height
+        {
+            return;
+        }
+
+        self.g_data.framebuffer = Framebuffer::new(new_size.width, new_size.height, 4);
+        self.g_data.framebuffer.fill(Color::rgb(0, 0, 0));
+        self.shared_render_buffer = Arc::new(
+            (0..self.g_data.framebuffer.data.len())
+                .map(|_| AtomicU8::new(0))
+                .collect::<Vec<_>>(),
+        );
+    }
+
+    fn request_final_render(&mut self) {
+        if self.worker_job.is_some() {
+            return;
+        }
+
+        self.render_mode = RenderMode::Final;
+        self.resize_render_target(self.final_render_size);
+        self.ensure_window_size_for_final();
+        self.update_scene = true;
+        self.is_final_render = true;
+    }
+
+    fn switch_to_preview_mode(&mut self) {
+        self.render_mode = RenderMode::Preview;
+        self.resize_render_target(self.preview_render_size);
+
+        if let Some(window) = &self.window {
+            let _ = window.request_inner_size(self.min_viewport_size);
+        }
+
+        self.update_scene = true;
+    }
+
+    fn ensure_window_size_for_final(&self) {
+        let Some(window) = &self.window else {
+            return;
+        };
+
+        let current_size = window.inner_size();
+        if self.final_render_size.width > current_size.width {
+            let _ = window.request_inner_size(self.final_render_size);
+        }
+    }
+
+    fn mark_scene_dirty_preview(&mut self) {
+        if self.render_mode == RenderMode::Preview {
+            self.update_scene = true;
+        } else {
+            self.switch_to_preview_mode();
+        }
+    }
+
+    fn move_camera(&mut self, movement: Vec3) {
+        self.camera.lookfrom += movement;
+        self.camera.lookat += movement;
+        self.camera.init();
+        self.mark_scene_dirty_preview();
+    }
+
+    fn rotate_camera(&mut self, yaw_delta: f64, pitch_delta: f64) {
+        let forward = (self.camera.lookat - self.camera.lookfrom).normalized();
+        if forward.near_zero() {
+            return;
+        }
+
+        let mut yaw = forward.z().atan2(forward.x());
+        let mut pitch = forward.y().asin();
+        let pitch_limit = FRAC_PI_2 - 0.01;
+
+        yaw += yaw_delta;
+        pitch = (pitch + pitch_delta).clamp(-pitch_limit, pitch_limit);
+
+        let look_dir = Vec3(
+            pitch.cos() * yaw.cos(),
+            pitch.sin(),
+            pitch.cos() * yaw.sin(),
+        )
+        .normalized();
+
+        self.camera.lookat = self.camera.lookfrom + look_dir;
+        self.camera.init();
+        self.mark_scene_dirty_preview();
+    }
+
+    fn adjust_defocus_angle(&mut self, delta: f64) {
+        self.camera.defocus_angle = (self.camera.defocus_angle + delta).max(0.0);
+        log::info!("defocus_angle adjusted to {:.3}", self.camera.defocus_angle);
+        self.camera.init();
+        self.mark_scene_dirty_preview();
+    }
+
+    fn adjust_focus_dist(&mut self, delta: f64) {
+        self.camera.focus_dist = (self.camera.focus_dist + delta).max(MIN_FOCUS_DIST);
+        log::info!("focus_dist adjusted to {:.3}", self.camera.focus_dist);
+        self.camera.init();
+        self.mark_scene_dirty_preview();
+    }
+
+    fn apply_input_action(&mut self, action: InputAction, event_loop: &ActiveEventLoop) {
+        match action {
+            InputAction::Exit => event_loop.exit(),
+            InputAction::RenderFinalOnce => self.request_final_render(),
+            InputAction::MoveForward => {
+                let forward = (self.camera.lookat - self.camera.lookfrom).normalized();
+                if !forward.near_zero() {
+                    self.move_camera(forward * self.config.camera_move_step);
+                }
+            }
+            InputAction::MoveBackward => {
+                let forward = (self.camera.lookat - self.camera.lookfrom).normalized();
+                if !forward.near_zero() {
+                    self.move_camera(-forward * self.config.camera_move_step);
+                }
+            }
+            InputAction::MoveLeft => {
+                let right = self.camera.u.normalized();
+                if !right.near_zero() {
+                    self.move_camera(-right * self.config.camera_move_step);
+                }
+            }
+            InputAction::MoveRight => {
+                let right = self.camera.u.normalized();
+                if !right.near_zero() {
+                    self.move_camera(right * self.config.camera_move_step);
+                }
+            }
+            InputAction::LookUp => {
+                self.rotate_camera(0.0, self.config.camera_look_step_radians);
+            }
+            InputAction::LookDown => {
+                self.rotate_camera(0.0, -self.config.camera_look_step_radians);
+            }
+            InputAction::LookLeft => {
+                self.rotate_camera(-self.config.camera_look_step_radians, 0.0);
+            }
+            InputAction::LookRight => {
+                self.rotate_camera(self.config.camera_look_step_radians, 0.0);
+            }
+            InputAction::IncreaseDefocusAngle => {
+                self.adjust_defocus_angle(CAMERA_DEFOCUS_STEP);
+            }
+            InputAction::DecreaseDefocusAngle => {
+                self.adjust_defocus_angle(-CAMERA_DEFOCUS_STEP);
+            }
+            InputAction::IncreaseFocusDist => {
+                self.adjust_focus_dist(CAMERA_FOCUS_DIST_STEP);
+            }
+            InputAction::DecreaseFocusDist => {
+                self.adjust_focus_dist(-CAMERA_FOCUS_DIST_STEP);
+            }
+        }
+    }
+
     pub fn setup_scene(&mut self) {
         let Some(scene) = Arc::get_mut(&mut self.scene) else {
             return;
         };
 
         let mat_ground = Lambertian::new(Color::rgb_f(0.5, 0.5, 0.5));
-        scene.add_object(Sphere::new(Vec3(0.0, -1000.0, -1.0), 1000.00, Arc::new(mat_ground)));
+        scene.add_object(Sphere::new(
+            Vec3(0.0, -1000.0, -1.0),
+            1000.00,
+            Arc::new(mat_ground),
+        ));
 
         for i in -11..11 {
             for j in -11..11 {
                 let random_mat = random_f64();
-                let center = Vec3(i as f64 + 0.9 * random_f64(), 0.2, j as f64 + 0.9 * random_f64());
+                let center = Vec3(
+                    i as f64 + 0.9 * random_f64(),
+                    0.2,
+                    j as f64 + 0.9 * random_f64(),
+                );
 
                 if (center - Vec3(4.0, 0.2, 0.0)).length() > 0.9 {
                     let mat: Arc<dyn Material>;
@@ -210,14 +413,12 @@ impl App {
                         let albedo = LinearColor::random().to_color();
                         mat = Arc::new(Lambertian::new(albedo));
                         scene.add_object(Sphere::new(center, 0.2, mat));
-                    }
-                    else if random_mat < 0.95 {
+                    } else if random_mat < 0.95 {
                         let albedo = LinearColor::random_limit(0.5, 1.0).to_color();
                         let fuzz = random_f64() * 0.5;
                         mat = Arc::new(Metal::new(albedo, fuzz));
                         scene.add_object(Sphere::new(center, 0.2, mat));
-                    }
-                    else {
+                    } else {
                         mat = Arc::new(Dielectric::new(1.5));
                         scene.add_object(Sphere::new(center, 0.2, mat));
                     }
@@ -244,7 +445,9 @@ impl ApplicationHandler for App {
 
         let attrs = Window::default_attributes()
             .with_title("Rustracer")
-            .with_inner_size(PhysicalSize::new(self.config.width, self.config.height));
+            .with_inner_size(self.min_viewport_size)
+            .with_min_inner_size(self.min_viewport_size)
+            .with_resizable(false);
 
         let window = match event_loop.create_window(attrs) {
             Ok(window) => Arc::new(window),
@@ -282,11 +485,28 @@ impl ApplicationHandler for App {
                     context.state.resize(new_size);
                 }
 
-                self.update_scene = true; // Resize Buffer???
+                self.update_scene = true;
             }
             WindowEvent::RedrawRequested => {
                 Self::update(self);
                 Self::render(self);
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(keycode),
+                        state: ElementState::Pressed,
+                        ..
+                    },
+                ..
+            } => {
+                if self.is_final_render {
+                    return;
+                }
+
+                if let Some(action) = InputState::key_action(keycode) {
+                    self.apply_input_action(action, event_loop);
+                }
             }
             _ => {}
         }

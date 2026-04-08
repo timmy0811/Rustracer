@@ -9,12 +9,10 @@ pub struct SceneIter<'a> {
 }
 
 impl Scene {
-    pub fn new(capacity: usize) -> Self{
+    pub fn new(capacity: usize) -> Self {
         let vec = Vec::with_capacity(capacity);
 
-        Self{
-            objects: vec
-        }
+        Self { objects: vec }
     }
 
     pub fn add_object<T: Hittable + 'static>(&mut self, obj: T) {

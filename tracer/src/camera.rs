@@ -1,8 +1,8 @@
-use utility::random::degrees_to_radians;
 use crate::vec3::Vec3;
+use utility::random::degrees_to_radians;
 
 #[derive(Clone)]
-pub struct Camera{
+pub struct Camera {
     pub focal_length: f64,
     pub position: Vec3,
     pub fov: f64,
@@ -21,9 +21,9 @@ pub struct Camera{
     pub defocus_disk_v: Vec3,
 }
 
-impl Camera{
+impl Camera {
     pub fn default() -> Self {
-        Self{
+        Self {
             focal_length: 1.0,
             position: Vec3(0.0, 0.0, 0.0),
             fov: 130.0,
@@ -39,18 +39,19 @@ impl Camera{
             focus_dist: 3.5,
 
             defocus_disk_u: Vec3::zero(),
-            defocus_disk_v: Vec3::zero()
+            defocus_disk_v: Vec3::zero(),
         }
     }
 
-    pub fn init(&mut self){
+    pub fn init(&mut self) {
         self.position = self.lookfrom;
 
         self.w = (self.lookfrom - self.lookat).normalized();
         self.u = self.up.cross(&self.w).normalized();
         self.v = self.w.cross(&self.u);
 
-        let defocus_radius = self.focus_dist * f64::tan(degrees_to_radians(self.defocus_angle) / 2.0);
+        let defocus_radius =
+            self.focus_dist * f64::tan(degrees_to_radians(self.defocus_angle) / 2.0);
         self.defocus_disk_u = self.u * defocus_radius;
         self.defocus_disk_v = self.v * defocus_radius;
     }

@@ -1,8 +1,8 @@
-use std::sync::Arc;
 use crate::hittable::{Hit, Hittable, SharedMaterial};
 use crate::interval::Interval;
 use crate::ray::Ray;
 use crate::vec3::Vec3;
+use std::sync::Arc;
 
 pub struct Sphere {
     center: Vec3,

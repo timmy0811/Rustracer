@@ -1,6 +1,6 @@
-use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub};
-use rand::RngExt;
 use crate::random;
+use rand::RngExt;
+use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Color {
@@ -34,7 +34,7 @@ impl LinearColor {
 
     pub fn random() -> Self {
         let mut rng = rand::rng();
-        Self{
+        Self {
             r: rng.random(),
             g: rng.random(),
             b: rng.random(),
@@ -43,7 +43,7 @@ impl LinearColor {
     }
 
     pub fn random_limit(min: f32, max: f32) -> Self {
-        Self{
+        Self {
             r: random::random_f32_limit(min, max),
             g: random::random_f32_limit(min, max),
             b: random::random_f32_limit(min, max),

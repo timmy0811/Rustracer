@@ -1,10 +1,9 @@
-use std::thread;
-use std::time::Duration;
-use std::sync::atomic::{AtomicU8, Ordering};
-use rand::RngExt;
 use crate::interval::Interval;
 use crate::scene::Scene;
-use crate::tracer::{Tracer};
+use crate::tracer::Tracer;
+use rand::RngExt;
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::thread;
 
 const BYTES_PER_PIXEL: usize = 4;
 
@@ -19,11 +18,11 @@ pub struct ThreadWorkPackage<'a> {
     pub data_region: &'a [AtomicU8],
     pub start_pixel: u32,
     pub end_pixel: u32,
-    pub tracer: Tracer<'a>
+    pub tracer: Tracer<'a>,
 }
 
 impl<'a> ThreadWorkPackage<'a> {
-    fn render(self, width: u32, height: u32) {
+    fn render(self, width: u32) {
         let mut rng = rand::rng();
 
         let n = (self.end_pixel - self.start_pixel) as usize;
@@ -42,9 +41,6 @@ impl<'a> ThreadWorkPackage<'a> {
             }
         }
 
-        let width_r = 1.0 / width as f32;
-        let height_r = 1.0 / width as f32;
-        
         let clipping_interval = Interval::new(0.001, 9999999.0);
 
         for k in 0..n {
@@ -52,7 +48,6 @@ impl<'a> ThreadWorkPackage<'a> {
             let global_pixel_index = self.start_pixel as usize + local_pixel;
             let x = (global_pixel_index % width as usize) as u32;
             let y = (global_pixel_index / width as usize) as u32;
-            let rand_val: u32 = rng.random();
 
             let color = self.tracer.raytrace_pixel(x, y, &clipping_interval);
 
@@ -80,8 +75,8 @@ pub fn render_packages_in_parallel_atomic(
     width: u32,
     height: u32,
     threads: usize,
-    tracer: Tracer) -> Result<(), RenderError>
-{
+    tracer: Tracer,
+) -> Result<(), RenderError> {
     if width == 0 || height == 0 {
         return Err(RenderError::EmptyDimensions);
     }
@@ -95,12 +90,13 @@ pub fn render_packages_in_parallel_atomic(
         });
     }
 
-    let mut packages = split_into_work_packages_atomic(scene, buffer, width, height, threads.max(1), tracer);
+    let mut packages =
+        split_into_work_packages_atomic(scene, buffer, width, height, threads.max(1), tracer);
 
     thread::scope(|scope| {
         for package in packages.drain(..) {
             scope.spawn(move || {
-                package.render(width, height);
+                package.render(width);
             });
         }
     });
@@ -114,7 +110,7 @@ pub fn raycast_scene_parallel(
     width: u32,
     height: u32,
     threads: usize,
-    tracer: Tracer
+    tracer: Tracer,
 ) -> Result<(), RenderError> {
     render_packages_in_parallel_atomic(scene, buffer, width, height, threads, tracer)
 }
@@ -125,7 +121,7 @@ fn split_into_work_packages_atomic<'a>(
     width: u32,
     height: u32,
     threads: usize,
-    tracer: Tracer<'a>
+    tracer: Tracer<'a>,
 ) -> Vec<ThreadWorkPackage<'a>> {
     let worker_count = threads.min(height as usize).max(1);
     let height_usize = height as usize;
@@ -140,7 +136,7 @@ fn split_into_work_packages_atomic<'a>(
         let rows = rows_per_worker + usize::from(worker < extra_rows);
         let pixels = rows * width as usize;
         let bytes = pixels * BYTES_PER_PIXEL;
-        
+
         let (region, rest) = remaining.split_at(bytes);
         remaining = rest;
 
@@ -150,7 +146,7 @@ fn split_into_work_packages_atomic<'a>(
             data_region: region,
             start_pixel,
             end_pixel,
-            tracer: tracer.clone()
+            tracer: tracer.clone(),
         });
         start_pixel = end_pixel;
     }
