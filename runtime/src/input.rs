@@ -3,6 +3,7 @@ use winit::keyboard::KeyCode;
 pub enum InputAction {
     Exit,
     RenderFinalOnce,
+    SaveFrameBuffer,
     MoveForward,
     MoveBackward,
     MoveLeft,
@@ -24,6 +25,7 @@ impl InputState {
         match keycode {
             KeyCode::Escape => Some(InputAction::Exit),
             KeyCode::Space => Some(InputAction::RenderFinalOnce),
+            KeyCode::KeyQ => Some(InputAction::SaveFrameBuffer),
             KeyCode::KeyW => Some(InputAction::MoveForward),
             KeyCode::KeyS => Some(InputAction::MoveBackward),
             KeyCode::KeyA => Some(InputAction::MoveLeft),

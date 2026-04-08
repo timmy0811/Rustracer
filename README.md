@@ -24,7 +24,7 @@ The runtime reads settings from `config.yml`.
 
 ## Controls
 
-> While a final render is in progress, keyboard input is ignored until it completes.
+> While a final render is in progress, keyboard input is ignored except `Q` (save screenshot).
 
 | Key | Action |
 | --- | --- |
@@ -41,6 +41,7 @@ The runtime reads settings from `config.yml`.
 | `T` | Increase camera focus distance |
 | `G` | Decrease camera focus distance |
 | `Space` | Start one final-quality render |
+| `Q` | Save current buffer to `screenshots/render_<timestamp>.png` |
 | `Esc` | Exit |
 
 ## Render modes

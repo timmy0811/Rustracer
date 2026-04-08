@@ -2,6 +2,11 @@ use crate::framebuffer::Framebuffer;
 use crate::gpu::GpuState;
 use crate::input::{InputAction, InputState};
 use env_logger::Env;
+use image::codecs::png::PngEncoder;
+use image::{ColorType, ImageEncoder};
+use std::fs::{self, File};
+use std::io::BufWriter;
+use std::path::Path;
 use std::f64::consts::FRAC_PI_2;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
@@ -330,10 +335,59 @@ impl App {
         self.mark_scene_dirty_preview();
     }
 
+    fn snapshot_current_render_buffer(&self) -> Vec<u8> {
+        self.shared_render_buffer
+            .iter()
+            .map(|byte| byte.load(Ordering::Relaxed))
+            .collect()
+    }
+
+    fn save_current_buffer_to_file(&self) {
+        let timestamp_ms = match SystemTime::now().duration_since(UNIX_EPOCH) {
+            Ok(duration) => duration.as_millis(),
+            Err(err) => {
+                log::error!("failed to build timestamp for screenshot: {err}");
+                return;
+            }
+        };
+
+        let output_dir = Path::new("screenshots");
+        if let Err(err) = fs::create_dir_all(output_dir) {
+            log::error!("failed to create screenshot directory: {err}");
+            return;
+        }
+
+        let filename = format!("render_{timestamp_ms}.png");
+        let output_path = output_dir.join(filename);
+
+        let file = match File::create(&output_path) {
+            Ok(file) => file,
+            Err(err) => {
+                log::error!("failed to create screenshot file: {err}");
+                return;
+            }
+        };
+
+        let pixels = self.snapshot_current_render_buffer();
+        let encoder = PngEncoder::new(BufWriter::new(file));
+        if let Err(err) = encoder.write_image(
+            &pixels,
+            self.g_data.framebuffer.width,
+            self.g_data.framebuffer.height,
+            ColorType::Rgba8.into(),
+        ) {
+            log::error!("failed to write screenshot: {err}");
+            return;
+        }
+
+        log::info!("saved screenshot: {}", output_path.display());
+    }
+
     fn apply_input_action(&mut self, action: InputAction, event_loop: &ActiveEventLoop) {
         match action {
             InputAction::Exit => event_loop.exit(),
             InputAction::RenderFinalOnce => self.request_final_render(),
+            InputAction::SaveFrameBuffer => self.save_current_buffer_to_file(),
             InputAction::MoveForward => {
                 let forward = (self.camera.lookat - self.camera.lookfrom).normalized();
                 if !forward.near_zero() {
@@ -500,11 +554,11 @@ impl ApplicationHandler for App {
                     },
                 ..
             } => {
-                if self.is_final_render {
-                    return;
-                }
-
                 if let Some(action) = InputState::key_action(keycode) {
+                    if self.is_final_render && !matches!(action, InputAction::SaveFrameBuffer) {
+                        return;
+                    }
+
                     self.apply_input_action(action, event_loop);
                 }
             }
