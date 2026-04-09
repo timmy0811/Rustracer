@@ -254,7 +254,7 @@ impl App {
 
         self.render_mode = RenderMode::Final;
         self.resize_render_target(self.final_render_size);
-        self.ensure_window_size_for_final();
+        self.ensure_window_size(self.final_render_size);
         self.update_scene = true;
         self.is_final_render = true;
     }
@@ -262,22 +262,28 @@ impl App {
     fn switch_to_preview_mode(&mut self) {
         self.render_mode = RenderMode::Preview;
         self.resize_render_target(self.preview_render_size);
-
-        if let Some(window) = &self.window {
-            let _ = window.request_inner_size(self.min_viewport_size);
-        }
+        self.ensure_window_size(self.min_viewport_size);
 
         self.update_scene = true;
     }
 
-    fn ensure_window_size_for_final(&self) {
+    fn ensure_window_size(&mut self, target_size: PhysicalSize<u32>) {
         let Some(window) = &self.window else {
             return;
         };
 
         let current_size = window.inner_size();
-        if self.final_render_size.width > current_size.width {
-            let _ = window.request_inner_size(self.final_render_size);
+        if current_size == target_size {
+            if let Some(context) = self.g_context.as_mut() {
+                context.state.resize(target_size);
+            }
+            return;
+        }
+
+        // Request exact target dimensions; many platforms apply this asynchronously.
+        let requested_size = window.request_inner_size(target_size).unwrap_or(current_size);
+        if let Some(context) = self.g_context.as_mut() {
+            context.state.resize(requested_size);
         }
     }
 

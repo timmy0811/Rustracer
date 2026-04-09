@@ -1,15 +1,19 @@
+use std::cell::RefCell;
 use rand::RngExt;
 
-pub fn degrees_to_radians(degrees: f64) -> f64 {
-    degrees * std::f64::consts::PI / 180.0
+thread_local! {
+    static RNG: RefCell<rand::rngs::ThreadRng> = RefCell::new(rand::rng());
 }
 
 pub fn random_f64() -> f64 {
-    rand::rng().random()
+    RNG.with(|rng| rng.borrow_mut().random())
 }
 
 pub fn random_f32() -> f32 {
-    rand::rng().random()
+    RNG.with(|rng| rng.borrow_mut().random())
+}
+pub fn degrees_to_radians(degrees: f64) -> f64 {
+    degrees * std::f64::consts::PI / 180.0
 }
 
 pub fn random_f64_limit(min: f64, max: f64) -> f64 {
